@@ -13,3 +13,14 @@ export function parseWindow(input, fallback = 15 * 60) {
 /** Bucket width that yields roughly 60 points for the given window. */
 export const bucketFor = (windowSeconds) =>
   Math.max(1, Math.round(windowSeconds / 60));
+
+/**
+ * A caller may pin the bucket width instead — the dashboard does, so that a
+ * plotted point and the alert threshold are the same unit ("requests per 4s")
+ * and the threshold line on the chart is directly comparable to the series.
+ */
+export function resolveBucket(requested, windowSeconds) {
+  const n = Number(requested);
+  if (!Number.isFinite(n) || n < 1) return bucketFor(windowSeconds);
+  return Math.min(Math.floor(n), windowSeconds);
+}

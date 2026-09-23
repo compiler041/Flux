@@ -1,364 +1,247 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import React, { useState, useEffect, useRef } from "react";
 import {
-  Area,
-  AreaChart,
-  CartesianGrid,
-  ReferenceLine,
-  ResponsiveContainer,
-  Tooltip,
+  LineChart,
+  Line,
   XAxis,
   YAxis,
-} from 'recharts';
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+  ReferenceLine,
+} from "recharts";
 
-import { SITE_ID, fetchMetrics, updateSite } from './api.js';
+import { fetchSites, fetchMetrics } from "./api.js";
 
-const POLL_MS = 5000;
-const WINDOWS = [
-  { label: '5m', value: '5m' },
-  { label: '15m', value: '15m' },
-  { label: '1h', value: '1h' },
-  { label: '6h', value: '6h' },
-];
+// --- live data settings -----------------------------------------------
 
-const fmtClock = (unixSeconds) =>
-  new Date(unixSeconds * 1000).toLocaleTimeString([], {
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  });
+const POLL_MS = 2000;
+const WINDOW = "2m";
+// One plotted point per 4s, matching the server's alert window.
+const BUCKET = 4;
 
-function StatCard({ label, value, hint, accent = 'text-slate-100' }) {
+function fmtClock(ts) {
+  const d = new Date(ts);
+  return d.toLocaleTimeString("en-IN", { hour12: false, minute: "2-digit", second: "2-digit" });
+}
+
+// --- small presentational pieces --------------------------------------
+
+function StatCard({ label, value, unit, tone }) {
+  const toneMap = {
+    normal: "text-[#E8A33D]",
+    good: "text-[#4FD1C5]",
+    bad: "text-[#E5647A]",
+  };
   return (
-    <div className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
-      <p className="text-xs font-medium uppercase tracking-wider text-slate-400">
-        {label}
-      </p>
-      <p className={`mt-2 text-3xl font-semibold tabular-nums ${accent}`}>{value}</p>
-      {hint && <p className="mt-1 text-xs text-slate-500">{hint}</p>}
+    <div className="bg-[#161C22] border border-[#232B33] rounded-md px-5 py-4 flex flex-col gap-1">
+      <span className="text-[11px] tracking-wide text-[#7B8794]">{label}</span>
+      <span className={`font-mono text-2xl ${toneMap[tone] || toneMap.normal}`}>
+        {value}
+        {unit && <span className="text-sm text-[#7B8794] ml-1">{unit}</span>}
+      </span>
     </div>
   );
 }
 
-function ChartTooltip({ active, payload, label }) {
-  if (!active || !payload?.length) return null;
+function AlertRow({ site, time, count }) {
   return (
-    <div className="rounded-lg border border-slate-700 bg-slate-900 px-3 py-2 text-xs shadow-xl">
-      <p className="text-slate-400">{fmtClock(label)}</p>
-      <p className="mt-1 font-semibold text-slate-100">
-        {payload[0].value} requests
-      </p>
+    <div className="flex items-center justify-between py-2.5 border-b border-[#232B33] last:border-0">
+      <div className="flex flex-col">
+        <span className="text-sm text-[#E8EAED]">{site}</span>
+        <span className="text-xs text-[#7B8794] font-mono">{time}</span>
+      </div>
+      <span className="text-xs font-mono text-[#E5647A] bg-[#E5647A1A] px-2 py-1 rounded">
+        {count} req/window
+      </span>
     </div>
   );
 }
 
-export default function App() {
-  const [data, setData] = useState(null);
+// --- main dashboard -----------------------------------------------------
+
+export default function FluxDashboard() {
+  const [sites, setSites] = useState([]);
+  const [activeSite, setActiveSite] = useState(null);
+  const [series, setSeries] = useState([]);
+  const [alerts, setAlerts] = useState([]);
+  const [stats, setStats] = useState({ current: 0, average: 0, peak: 0 });
+  const [threshold, setThreshold] = useState(0);
+  const [alertWindow, setAlertWindow] = useState(60);
   const [error, setError] = useState(null);
-  const [window_, setWindow] = useState('15m');
-  const [lastUpdated, setLastUpdated] = useState(null);
-  const [saving, setSaving] = useState(false);
-  const [draft, setDraft] = useState({ alert_threshold: '', phone_number: '' });
+  const timerRef = useRef(null);
 
-  const load = useCallback(async () => {
-    try {
-      const next = await fetchMetrics(SITE_ID, window_);
-      setData(next);
-      setError(null);
-      setLastUpdated(new Date());
-    } catch (err) {
-      setError(err.message);
-    }
-  }, [window_]);
-
-  // Poll the ingestion API instead of simulating traffic locally.
+  // Which sites is this Flux server watching?
   useEffect(() => {
+    fetchSites()
+      .then((data) => {
+        setSites(data.sites);
+        setActiveSite((current) => current ?? data.sites[0]?.id ?? null);
+        setError(null);
+      })
+      .catch((err) => setError(err.message));
+  }, []);
+
+  // Poll the ingestion API instead of generating traffic locally.
+  useEffect(() => {
+    if (!activeSite) return undefined;
+
+    const load = async () => {
+      try {
+        const data = await fetchMetrics(activeSite, WINDOW, BUCKET);
+        setSeries(data.points.map((p) => ({ t: p.timestamp * 1000, reqs: p.request_count })));
+        setStats(data.stats);
+        setThreshold(data.site.alert_threshold);
+        setAlertWindow(data.alert_window_seconds);
+        setAlerts(
+          data.alerts.slice(0, 6).map((a) => ({
+            site: a.site_id,
+            time: fmtClock(a.fired_at * 1000),
+            count: a.request_count,
+          }))
+        );
+        setError(null);
+      } catch (err) {
+        setError(err.message);
+      }
+    };
+
     load();
-    const id = setInterval(load, POLL_MS);
-    return () => clearInterval(id);
-  }, [load]);
+    timerRef.current = setInterval(load, POLL_MS);
+    return () => clearInterval(timerRef.current);
+  }, [activeSite]);
 
-  // Seed the settings form once the site config arrives.
-  useEffect(() => {
-    if (!data?.site) return;
-    setDraft((d) =>
-      d.alert_threshold === ''
-        ? {
-            alert_threshold: String(data.site.alert_threshold),
-            phone_number: data.site.phone_number ?? '',
-          }
-        : d
-    );
-  }, [data?.site]);
-
-  const series = useMemo(
-    () => (data?.points ?? []).map((p) => ({ t: p.timestamp, v: p.request_count })),
-    [data]
-  );
-
-  const threshold = data?.site?.alert_threshold ?? 0;
-  const stats = data?.stats ?? { current: 0, average: 0, peak: 0, total: 0 };
-  const alerts = data?.alerts ?? [];
-  const breaching = stats.current > threshold && threshold > 0;
-
-  async function saveSettings(event) {
-    event.preventDefault();
-    setSaving(true);
-    try {
-      await updateSite(SITE_ID, {
-        alert_threshold: Number(draft.alert_threshold),
-        phone_number: draft.phone_number.trim() || null,
-      });
-      await load();
-    } catch (err) {
-      setError(err.message);
-    } finally {
-      setSaving(false);
-    }
-  }
+  const { current, average: avg, peak } = stats;
 
   return (
-    <div className="min-h-full bg-slate-950">
-      <div className="mx-auto max-w-6xl px-6 py-10">
-        {/* ─────────────────────────────── header */}
-        <header className="flex flex-wrap items-start justify-between gap-4">
-          <div>
-            <div className="flex items-center gap-3">
-              <span className="grid h-9 w-9 place-items-center rounded-lg bg-emerald-500/15 text-lg">
-                ⚡
-              </span>
-              <h1 className="text-2xl font-semibold tracking-tight">Flux</h1>
-              <span className="rounded-full border border-slate-700 px-2 py-0.5 text-xs text-slate-400">
-                {data?.site?.name ?? SITE_ID}
-              </span>
-            </div>
-            <p className="mt-2 text-sm text-slate-400">
-              Lightweight traffic monitoring and SMS alerting for small teams.
-            </p>
-          </div>
-
-          <div className="flex items-center gap-3">
-            <div className="flex overflow-hidden rounded-lg border border-slate-800">
-              {WINDOWS.map((w) => (
-                <button
-                  key={w.value}
-                  onClick={() => setWindow(w.value)}
-                  className={`px-3 py-1.5 text-xs font-medium transition ${
-                    window_ === w.value
-                      ? 'bg-slate-800 text-slate-100'
-                      : 'text-slate-400 hover:text-slate-200'
-                  }`}
-                >
-                  {w.label}
-                </button>
-              ))}
-            </div>
-            <span
-              className={`flex items-center gap-2 rounded-full border px-3 py-1.5 text-xs ${
-                error
-                  ? 'border-rose-800 bg-rose-500/10 text-rose-300'
-                  : 'border-emerald-800 bg-emerald-500/10 text-emerald-300'
+    <div className="min-h-screen bg-[#0F1418] text-[#E8EAED] flex font-sans">
+      {/* sidebar */}
+      <aside className="w-56 border-r border-[#232B33] flex flex-col py-6 px-4 shrink-0">
+        <div className="flex items-baseline gap-1 mb-8 px-1">
+          <span className="text-lg font-semibold">Flux</span>
+          <span className="text-[10px] text-[#7B8794] font-mono">v0.1</span>
+        </div>
+        <span className="text-[11px] text-[#7B8794] px-1 mb-2">Monitored sites</span>
+        <nav className="flex flex-col gap-1">
+          {sites.map((s) => (
+            <button
+              key={s.id}
+              onClick={() => setActiveSite(s.id)}
+              className={`text-left text-sm px-3 py-2 rounded-md transition-colors ${
+                activeSite === s.id
+                  ? "bg-[#1E2731] text-[#E8A33D]"
+                  : "text-[#9AA5B1] hover:bg-[#161C22]"
               }`}
             >
-              <span
-                className={`h-1.5 w-1.5 rounded-full ${
-                  error ? 'bg-rose-400' : 'animate-pulse bg-emerald-400'
-                }`}
-              />
-              {error ? 'disconnected' : 'live'}
-            </span>
-          </div>
-        </header>
-
-        {error && (
-          <p className="mt-4 rounded-lg border border-rose-900 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
-            Could not reach the ingestion API: {error}. Is the server running on
-            port 4000, and is client/.env.local pointing at the right site?
+              {s.name}
+            </button>
+          ))}
+        </nav>
+        <div className="mt-auto px-1 pt-6 border-t border-[#232B33]">
+          <span className="text-[11px] text-[#7B8794]">Alert threshold</span>
+          <p className="font-mono text-sm text-[#E8EAED] mt-1">
+            {threshold} req / {alertWindow}s window
           </p>
-        )}
+        </div>
+      </aside>
 
-        {/* ─────────────────────────────── stat cards */}
-        <section className="mt-8 grid gap-4 sm:grid-cols-3">
-          <StatCard
-            label="Current traffic"
-            value={stats.current}
-            hint={`requests per ${data?.bucket_seconds ?? 15}s bucket`}
-            accent={breaching ? 'text-rose-400' : 'text-emerald-400'}
-          />
-          <StatCard
-            label="Average traffic"
-            value={stats.average}
-            hint={`over the last ${window_}`}
-          />
-          <StatCard
-            label="Peak traffic"
-            value={stats.peak}
-            hint={`threshold ${threshold}`}
-            accent={stats.peak > threshold ? 'text-amber-400' : 'text-slate-100'}
-          />
-        </section>
-
-        {/* ─────────────────────────────── chart */}
-        <section className="mt-6 rounded-xl border border-slate-800 bg-slate-900/60 p-5">
-          <div className="mb-4 flex items-center justify-between">
-            <h2 className="text-sm font-semibold text-slate-200">Request volume</h2>
-            <p className="text-xs text-slate-500">
-              {lastUpdated
-                ? `updated ${lastUpdated.toLocaleTimeString()}`
-                : 'loading…'}
+      {/* main */}
+      <main className="flex-1 px-8 py-6 overflow-y-auto">
+        <div className="flex items-center justify-between mb-6">
+          <div>
+            <h1 className="text-lg text-[#E8EAED]">{activeSite ?? "no sites registered"}</h1>
+            <p className="text-xs text-[#7B8794] mt-0.5">
+              Live request volume, refreshed every {POLL_MS / 1000}s
             </p>
           </div>
-
-          <div className="h-72">
-            <ResponsiveContainer width="100%" height="100%">
-              <AreaChart data={series} margin={{ top: 8, right: 8, bottom: 0, left: -16 }}>
-                <defs>
-                  <linearGradient id="fluxFill" x1="0" y1="0" x2="0" y2="1">
-                    <stop offset="0%" stopColor="#34d399" stopOpacity={0.45} />
-                    <stop offset="100%" stopColor="#34d399" stopOpacity={0} />
-                  </linearGradient>
-                </defs>
-                <CartesianGrid stroke="#1e293b" strokeDasharray="3 3" vertical={false} />
-                <XAxis
-                  dataKey="t"
-                  // Numeric/time scale so gaps in the data read as real gaps
-                  // rather than being squeezed into even categories.
-                  type="number"
-                  scale="time"
-                  domain={['dataMin', 'dataMax']}
-                  tickFormatter={fmtClock}
-                  stroke="#475569"
-                  tick={{ fontSize: 11 }}
-                  minTickGap={40}
-                />
-                <YAxis stroke="#475569" tick={{ fontSize: 11 }} allowDecimals={false} />
-                <Tooltip content={<ChartTooltip />} />
-                <ReferenceLine
-                  y={threshold}
-                  stroke="#fb7185"
-                  strokeDasharray="6 4"
-                  label={{
-                    value: `threshold ${threshold}`,
-                    position: 'insideTopRight',
-                    fill: '#fb7185',
-                    fontSize: 11,
-                  }}
-                />
-                <Area
-                  type="monotone"
-                  dataKey="v"
-                  stroke="#34d399"
-                  strokeWidth={2}
-                  fill="url(#fluxFill)"
-                  isAnimationActive={false}
-                />
-              </AreaChart>
-            </ResponsiveContainer>
+          <div
+            className={`flex items-center gap-2 text-xs ${
+              error ? "text-[#E5647A]" : "text-[#4FD1C5]"
+            }`}
+          >
+            <span
+              className={`w-1.5 h-1.5 rounded-full ${
+                error ? "bg-[#E5647A]" : "bg-[#4FD1C5] animate-pulse"
+              }`}
+            />
+            {error ? "disconnected" : "connected"}
           </div>
-
-          {series.length === 0 && !error && (
-            <p className="mt-3 text-center text-xs text-slate-500">
-              No data in this window yet — start the agent or run{' '}
-              <code className="text-slate-400">npm run burst</code>.
-            </p>
-          )}
-        </section>
-
-        <div className="mt-6 grid gap-6 lg:grid-cols-3">
-          {/* ───────────────────────────── alerts */}
-          <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-5 lg:col-span-2">
-            <div className="mb-4 flex items-center justify-between">
-              <h2 className="text-sm font-semibold text-slate-200">Recent alerts</h2>
-              <span className="text-xs text-slate-500">{alerts.length} shown</span>
-            </div>
-
-            {alerts.length === 0 ? (
-              <p className="py-6 text-center text-sm text-slate-500">
-                No alerts fired. Traffic is below the threshold.
-              </p>
-            ) : (
-              <ul className="divide-y divide-slate-800">
-                {alerts.map((a) => (
-                  <li key={a._id} className="flex items-start gap-3 py-3">
-                    <span className="mt-1 h-2 w-2 shrink-0 rounded-full bg-rose-400" />
-                    <div className="min-w-0 flex-1">
-                      <p className="text-sm text-slate-200">
-                        {a.request_count} requests exceeded the threshold of{' '}
-                        {a.threshold}
-                      </p>
-                      <p className="mt-0.5 text-xs text-slate-500">
-                        {new Date(a.fired_at * 1000).toLocaleString()}
-                      </p>
-                    </div>
-                    <span
-                      className={`rounded-full px-2 py-0.5 text-[11px] font-medium ${
-                        a.sms_status === 'sent'
-                          ? 'bg-emerald-500/10 text-emerald-300'
-                          : a.sms_status === 'failed'
-                            ? 'bg-rose-500/10 text-rose-300'
-                            : 'bg-slate-700/40 text-slate-400'
-                      }`}
-                    >
-                      SMS {a.sms_status}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </section>
-
-          {/* ───────────────────────────── settings */}
-          <section className="rounded-xl border border-slate-800 bg-slate-900/60 p-5">
-            <h2 className="text-sm font-semibold text-slate-200">Alert settings</h2>
-            <p className="mt-1 text-xs text-slate-500">
-              Applies to site <code className="text-slate-400">{SITE_ID}</code>.
-            </p>
-
-            <form onSubmit={saveSettings} className="mt-4 space-y-4">
-              <label className="block">
-                <span className="text-xs font-medium text-slate-400">
-                  Threshold (requests per alert window)
-                </span>
-                <input
-                  type="number"
-                  min="1"
-                  value={draft.alert_threshold}
-                  onChange={(e) =>
-                    setDraft({ ...draft, alert_threshold: e.target.value })
-                  }
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-600"
-                />
-              </label>
-
-              <label className="block">
-                <span className="text-xs font-medium text-slate-400">
-                  SMS number (E.164)
-                </span>
-                <input
-                  type="tel"
-                  placeholder="+919876543210"
-                  value={draft.phone_number}
-                  onChange={(e) =>
-                    setDraft({ ...draft, phone_number: e.target.value })
-                  }
-                  className="mt-1 w-full rounded-lg border border-slate-700 bg-slate-950 px-3 py-2 text-sm text-slate-100 outline-none focus:border-emerald-600"
-                />
-              </label>
-
-              <button
-                type="submit"
-                disabled={saving}
-                className="w-full rounded-lg bg-emerald-500 px-3 py-2 text-sm font-semibold text-slate-950 transition hover:bg-emerald-400 disabled:opacity-50"
-              >
-                {saving ? 'Saving…' : 'Save settings'}
-              </button>
-            </form>
-          </section>
         </div>
 
-        <footer className="mt-10 text-center text-xs text-slate-600">
-          Flux · polling every {POLL_MS / 1000}s · SDG-9 mini project
-        </footer>
-      </div>
+        {error && (
+          <div className="bg-[#E5647A1A] border border-[#E5647A] rounded-md px-4 py-3 mb-6">
+            <p className="text-xs text-[#E5647A]">
+              Could not reach the ingestion API: {error}. Is the server running on port 4000, and
+              does client/.env.local hold a valid API key?
+            </p>
+          </div>
+        )}
+
+        <div className="grid grid-cols-3 gap-4 mb-6">
+          <StatCard
+            label="Current"
+            value={current}
+            unit="req"
+            tone={current > threshold && threshold > 0 ? "bad" : "normal"}
+          />
+          <StatCard label="Rolling average" value={avg} unit="req" tone="good" />
+          <StatCard label="Peak (last 2 min)" value={peak} unit="req" tone="normal" />
+        </div>
+
+        <div className="bg-[#161C22] border border-[#232B33] rounded-md p-5 mb-6">
+          <ResponsiveContainer width="100%" height={260}>
+            <LineChart data={series} margin={{ top: 4, right: 12, left: -12, bottom: 0 }}>
+              <CartesianGrid stroke="#232B33" vertical={false} />
+              <XAxis
+                dataKey="t"
+                tickFormatter={fmtClock}
+                stroke="#7B8794"
+                fontSize={11}
+                tickLine={false}
+                axisLine={{ stroke: "#232B33" }}
+              />
+              <YAxis
+                // Always leave room for the threshold line, so it stays on the
+                // chart even while traffic is comfortably below it.
+                domain={[0, (max) => Math.ceil(Math.max(max, threshold) * 1.1)]}
+                stroke="#7B8794"
+                fontSize={11}
+                tickLine={false}
+                axisLine={{ stroke: "#232B33" }}
+              />
+              <Tooltip
+                contentStyle={{ background: "#1E2731", border: "1px solid #232B33", borderRadius: 6, fontSize: 12 }}
+                labelFormatter={fmtClock}
+              />
+              <ReferenceLine y={threshold} stroke="#E5647A" strokeDasharray="4 4" />
+              <Line
+                type="monotone"
+                dataKey="reqs"
+                stroke="#E8A33D"
+                strokeWidth={2}
+                dot={false}
+                // The series arrives from the API after first paint and is
+                // replaced every poll; animating each swap just makes it crawl.
+                isAnimationActive={false}
+              />
+            </LineChart>
+          </ResponsiveContainer>
+          {series.length === 0 && !error && (
+            <p className="text-xs text-[#7B8794] text-center -mt-32 mb-28">
+              No traffic in the last 2 minutes — start the agent or run npm run burst.
+            </p>
+          )}
+        </div>
+
+        <div className="bg-[#161C22] border border-[#232B33] rounded-md p-5">
+          <h2 className="text-sm text-[#E8EAED] mb-1">Recent alerts</h2>
+          <p className="text-xs text-[#7B8794] mb-3">Sent by SMS to the registered developer</p>
+          {alerts.length === 0 ? (
+            <p className="text-sm text-[#7B8794] py-4">No alerts yet — traffic is under threshold.</p>
+          ) : (
+            alerts.map((a, i) => <AlertRow key={i} {...a} />)
+          )}
+        </div>
+      </main>
     </div>
   );
 }

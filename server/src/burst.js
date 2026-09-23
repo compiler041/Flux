@@ -2,12 +2,12 @@
  * Fire enough traffic at the ingestion API to trip a site's threshold.
  *
  *   npm run burst
- *   npm run burst -- --count 400 --posts 10
+ *   npm run burst -- --site checkout.mystore.in --posts 8
  *
  * Talks to the API over HTTP only (never the database directly), so it works
  * the same against a real mongod and against the in-memory fallback. It reads
- * credentials from .demo-site.json (written when the site was seeded), or from
- * FLUX_URL / FLUX_SITE_ID / FLUX_API_KEY.
+ * credentials from .demo-sites.json (written when the sites were seeded), or
+ * from FLUX_URL / FLUX_SITE_ID / FLUX_API_KEY.
  */
 import 'dotenv/config';
 import fs from 'node:fs';
@@ -20,35 +20,37 @@ function arg(flag, fallback) {
 }
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const demoFile = path.resolve(here, '../.demo-site.json');
-
-let demo = {};
-if (fs.existsSync(demoFile)) {
-  demo = JSON.parse(fs.readFileSync(demoFile, 'utf8'));
-}
+const demoFile = path.resolve(here, '../.demo-sites.json');
+const demo = fs.existsSync(demoFile)
+  ? JSON.parse(fs.readFileSync(demoFile, 'utf8'))
+  : { sites: [] };
 
 const url = arg('url', process.env.FLUX_URL || demo.url || 'http://localhost:4000');
-const siteId = arg('site', process.env.FLUX_SITE_ID || demo.site_id);
-const apiKey = arg('key', process.env.FLUX_API_KEY || demo.api_key);
+const siteId = arg('site', process.env.FLUX_SITE_ID || demo.sites[0]?.site_id);
+
+// The API key must belong to the site being written to, so look it up.
+const known = demo.sites.find((s) => s.site_id === siteId);
+const apiKey = process.env.FLUX_API_KEY || known?.api_key;
 
 if (!siteId || !apiKey) {
+  const names = demo.sites.map((s) => s.site_id).join(', ') || '(none)';
   console.error(
-    'No site credentials found.\n' +
-      'Start the server once (it seeds a demo site and writes .demo-site.json),\n' +
-      'or pass --site <id> --key <api_key>.'
+    `No credentials for site "${siteId ?? '?'}".\n` +
+      `Known sites: ${names}\n` +
+      'Start the server once (it seeds the demo sites and writes .demo-sites.json).'
   );
   process.exit(1);
 }
 
-// Default: about 2x the seeded threshold, spread over 8 posts a second apart.
-const threshold = Number(demo.alert_threshold) || 120;
-const total = Number(arg('count', String(threshold * 2)));
-const posts = Number(arg('posts', '8'));
-const per = Math.ceil(total / posts);
+const threshold = Number(known?.alert_threshold) || 480;
+// Each post lands inside one 4s alert window, so a single post must clear the
+// threshold on its own for the breach to be unambiguous.
+const per = Number(arg('count', String(Math.ceil(threshold * 1.5))));
+const posts = Number(arg('posts', '6'));
 
 console.log(
-  `Sending ${posts} x ${per} = ${per * posts} requests to "${siteId}" at ${url} ` +
-    `(threshold ${threshold})...`
+  `Sending ${posts} posts of ${per} requests to "${siteId}" at ${url} ` +
+    `(threshold ${threshold} per alert window)...`
 );
 
 for (let i = 0; i < posts; i++) {

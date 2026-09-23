@@ -1,9 +1,10 @@
 import { Router } from 'express';
 import { requireApiKey, requireSiteMatch } from '../middleware/auth.js';
 import { Metric } from '../models/Metric.js';
+import { Site } from '../models/Site.js';
 import { Alert } from '../models/Alert.js';
 import { bucketedMetrics } from '../services/metrics.js';
-import { parseWindow, bucketFor } from '../utils/window.js';
+import { parseWindow, resolveBucket } from '../utils/window.js';
 import { nowSec } from '../db.js';
 
 export const metricsRouter = Router();
@@ -75,14 +76,19 @@ metricsRouter.post('/metrics', requireApiKey, async (req, res, next) => {
  * GET /api/sites/:site_id/metrics?window=15m
  * Bucketed series + summary stats + recent alerts — everything the dashboard
  * needs in a single poll.
+ *
+ * Reads are not restricted to the key's own site: the dashboard is a
+ * single-operator view over every site this server watches. Writes still are
+ * (see POST /api/metrics), so one site's agent can never forge another's data.
  */
 metricsRouter.get('/sites/:site_id/metrics', requireApiKey, async (req, res, next) => {
   try {
     const { site_id } = req.params;
-    if (!requireSiteMatch(site_id, req, res)) return;
+    const site = await Site.findById(site_id);
+    if (!site) return res.status(404).json({ error: 'site not found' });
 
     const windowSeconds = parseWindow(req.query.window);
-    const bucket = bucketFor(windowSeconds);
+    const bucket = resolveBucket(req.query.bucket, windowSeconds);
     const since = nowSec() - windowSeconds;
 
     const points = await bucketedMetrics(site_id, since, bucket);
@@ -92,13 +98,15 @@ metricsRouter.get('/sites/:site_id/metrics', requireApiKey, async (req, res, nex
 
     res.json({
       site: {
-        id: req.site._id,
-        name: req.site.name,
-        alert_threshold: req.site.alert_threshold,
-        phone_number: req.site.phone_number,
+        id: site._id,
+        name: site.name,
+        alert_threshold: site.alert_threshold,
+        phone_number: site.phone_number,
       },
       window_seconds: windowSeconds,
       bucket_seconds: bucket,
+      // The window the alert worker actually compares against the threshold.
+      alert_window_seconds: Number(process.env.ALERT_WINDOW_SECONDS) || 60,
       points, // [{ timestamp (unix seconds), request_count }]
       stats: {
         current: counts.length ? counts[counts.length - 1] : 0,
@@ -113,12 +121,10 @@ metricsRouter.get('/sites/:site_id/metrics', requireApiKey, async (req, res, nex
   }
 });
 
-/** GET /api/sites/:site_id/alerts — alert history. */
+/** GET /api/sites/:site_id/alerts — alert history (readable across sites). */
 metricsRouter.get('/sites/:site_id/alerts', requireApiKey, async (req, res, next) => {
   try {
     const { site_id } = req.params;
-    if (!requireSiteMatch(site_id, req, res)) return;
-
     const limit = Math.min(Number(req.query.limit) || 25, 100);
     const alerts = await Alert.find({ site_id }).sort({ fired_at: -1 }).limit(limit);
     res.json({ alerts });

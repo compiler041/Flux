@@ -9,7 +9,7 @@ import { metricsRouter } from './routes/metrics.js';
 import { startAlertWorker } from './services/alerting.js';
 import { initNotifier, notifierReady } from './services/notifier.js';
 import {
-  seedDemoSite,
+  seedDemoSites,
   writeClientEnv,
   writeAgentEnv,
   printSiteBanner,
@@ -53,13 +53,13 @@ startAlertWorker();
 // something to look at. Set AUTOSEED=false to disable.
 if (String(process.env.AUTOSEED).toLowerCase() !== 'false') {
   if ((await Site.countDocuments()) === 0) {
-    const site = await seedDemoSite({
+    const sites = await seedDemoSites({
       phone: process.env.DEMO_PHONE_NUMBER || null,
     });
-    writeClientEnv(site);
-    writeAgentEnv(site);
-    console.log('[seed] empty database - created the demo site');
-    printSiteBanner(site);
+    writeClientEnv(sites);
+    writeAgentEnv(sites);
+    console.log('[seed] empty database - created the demo sites');
+    printSiteBanner(sites);
   }
 }
 

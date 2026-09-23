@@ -1,23 +1,16 @@
 /**
  * Thin wrapper over the Flux ingestion API.
  *
- * Credentials come from Vite env vars (client/.env.local, written by the
- * seed step). The API key is a per-site read/write key — fine for a
- * self-hosted MVP dashboard, not something to ship to the public internet.
+ * Credentials come from Vite env vars (client/.env.local, written by the seed
+ * step). The key is a per-site read/write key — fine for a self-hosted MVP
+ * dashboard, not something to ship to the public internet.
  */
-const BASE = import.meta.env.VITE_FLUX_API_URL || 'http://localhost:4000';
+const BASE = import.meta.env.VITE_FLUX_API_URL || "http://localhost:4000";
+const API_KEY = import.meta.env.VITE_FLUX_API_KEY || "";
 
-export const SITE_ID = import.meta.env.VITE_FLUX_SITE_ID || 'demo-site';
-const API_KEY = import.meta.env.VITE_FLUX_API_KEY || '';
-
-async function request(path, options = {}) {
+async function request(path) {
   const res = await fetch(`${BASE}${path}`, {
-    ...options,
-    headers: {
-      'content-type': 'application/json',
-      authorization: `Bearer ${API_KEY}`,
-      ...options.headers,
-    },
+    headers: { authorization: `Bearer ${API_KEY}` },
   });
 
   if (!res.ok) {
@@ -32,15 +25,17 @@ async function request(path, options = {}) {
   return res.json();
 }
 
-/** Series + stats + recent alerts for the dashboard, in one call. */
-export const fetchMetrics = (siteId = SITE_ID, window = '15m') =>
-  request(`/api/sites/${siteId}/metrics?window=${encodeURIComponent(window)}`);
+/** Every site registered with this Flux server. */
+export const fetchSites = () => request("/api/sites");
 
-/** Update the site's alert threshold or phone number. */
-export const updateSite = (siteId, patch) =>
-  request(`/api/sites/${siteId}`, {
-    method: 'PATCH',
-    body: JSON.stringify(patch),
-  });
-
-export const health = () => request('/api/health');
+/**
+ * Series + stats + recent alerts for one site, in a single call.
+ *
+ * `bucket` pins the width of a plotted point so it matches the server's alert
+ * window - that is what makes the threshold line on the chart comparable to
+ * the series it is drawn over.
+ */
+export const fetchMetrics = (siteId, window = "2m", bucket = 4) =>
+  request(
+    `/api/sites/${siteId}/metrics?window=${encodeURIComponent(window)}&bucket=${bucket}`
+  );

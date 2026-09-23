@@ -28,11 +28,11 @@ MERN stack — MongoDB, Express, React, Node.
 
 ## What's in the box
 
-| Folder    | What it is                                                              |
-| --------- | ----------------------------------------------------------------------- |
-| `server/` | Express ingestion API, MongoDB (Mongoose) storage, cron alert worker    |
-| `client/` | React + Vite + Tailwind + Recharts dashboard                            |
-| `agent/`  | `flux-agent` — the tiny drop-in counter a site owner installs           |
+| Folder    | What it is                                                           |
+| --------- | -------------------------------------------------------------------- |
+| `server/` | Express ingestion API, MongoDB (Mongoose) storage, cron alert worker |
+| `client/` | The Flux dashboard — React + Vite + Tailwind + Recharts              |
+| `agent/`  | `flux-agent` — the tiny drop-in counter a site owner installs        |
 
 ---
 
@@ -42,54 +42,76 @@ You need **Node 18+**. You do *not* need MongoDB installed — see
 [Database](#database) below.
 
 ```bash
-# 1. install everything
 npm run install:all          # or: npm install in server/, client/ and agent/
-
-# 2. start the API + alert worker (terminal 1)
-cd server && npm start
-
-# 3. start the dashboard (terminal 2)
-cd client && npm run dev     # → http://localhost:5173
+```
+```bash
+cd server && npm start       # terminal 1 — API + alert worker
+```
+```bash
+cd client && npm run dev     # terminal 2 — dashboard on :5173
 ```
 
-On its first run against an empty database the server **creates a demo site**,
-backfills 15 minutes of baseline traffic, prints the API key, and writes
-`client/.env.local` so the dashboard connects with no copy-paste:
+On its first run against an empty database the server **creates three demo
+sites**, backfills 15 minutes of baseline traffic for each, prints their API
+keys, and writes `client/.env.local` so the dashboard connects with no
+copy-paste:
 
 ```
-──────────────────────────────────────────────────────────────
-  Site id         : demo-site
-  API key         : flux_45d877cb43e483998d4fb7c66e48fa71
-  Alert threshold : 120 requests per alert window
-  Phone number    : (none - SMS will be skipped)
-──────────────────────────────────────────────────────────────
+────────────────────────────────────────────────────────────────────────────
+  SITE                   API KEY                                   THRESHOLD
+  api.mystore.in         flux_8121759ee174e071545f370c08ba356f      480
+  checkout.mystore.in    flux_5d85277177c213e91d0642507c7c0aef      480
+  cdn.mystore.in         flux_e16f76a80eb447c2e405032ec325c58f      480
+────────────────────────────────────────────────────────────────────────────
 ```
 
-Open <http://localhost:5173> and you have a live dashboard.
+Open <http://localhost:5173>.
 
 ---
 
 ## The 5-minute demo
 
-1. **Show the dashboard.** Baseline traffic sits under the dashed threshold line.
+1. **Show the dashboard.** Three sites in the sidebar, each sitting at roughly
+   220 requests per 4-second window, well under the dashed 480 threshold line.
 2. **Point a "customer site" at Flux** (terminal 3):
    ```bash
    cd agent && npm run example
    ```
    A toy Express app on `:3000` instrumented with `flux-agent`, generating its
-   own synthetic visitors. The chart starts moving within ~5 seconds.
-3. **Set your phone number.** In the dashboard's *Alert settings* panel, enter an
-   E.164 number (`+919876543210`) and save. (With Twilio configured, this is the
-   number that will be texted.)
+   own synthetic visitors. The chart moves within ~5 seconds.
+3. **Set your phone number** so the SMS has somewhere to go:
+   ```bash
+   curl -X PATCH http://localhost:4000/api/sites/api.mystore.in \
+     -H "Authorization: Bearer $FLUX_API_KEY" \
+     -H "content-type: application/json" \
+     -d '{"phone_number":"+919876543210"}'
+   ```
 4. **Trip the threshold** (terminal 4):
    ```bash
    cd server && npm run burst
    ```
-   Sends ~2× the threshold over 8 seconds.
-5. **Watch it fire.** Within 30 seconds the worker logs the breach, the SMS goes
-   out, and a row appears in *Recent alerts* with an `SMS sent` badge.
-6. **Run `npm run burst` again** — the dashboard keeps climbing but no second SMS
+5. **Watch it fire.** Within four seconds the worker logs the breach, the SMS
+   goes out, the line punches through the threshold, `Current` turns red, and a
+   row appears under *Recent alerts*.
+6. **Run `npm run burst` again** — traffic keeps climbing but no second SMS
    arrives. That's the 5-minute cooldown doing its job.
+
+---
+
+## How the numbers line up
+
+One plotted point, the threshold line, and the alert window are all **the same
+unit: requests per 4 seconds**. That is deliberate — a threshold line drawn over
+a series measured differently would be meaningless.
+
+- `ALERT_WINDOW_SECONDS=4` — the worker sums the last 4s and compares it to the
+  site's `alert_threshold`.
+- The dashboard requests `?bucket=4`, so each point is one 4-second window.
+- `ALERT_CRON=*/4 * * * * *` — checks are contiguous, so a short spike cannot
+  slip between two evaluations.
+
+Widen all three together if you want a calmer alert (e.g. 60s windows checked
+every 60s).
 
 ---
 
@@ -97,32 +119,32 @@ Open <http://localhost:5173> and you have a live dashboard.
 
 `server/.env` sets `MONGODB_URI`. Flux tries it, and falls back automatically:
 
-| Setup                    | What to do                                                        |
-| ------------------------ | ----------------------------------------------------------------- |
+| Setup                    | What to do                                                    |
+| ------------------------ | ------------------------------------------------------------- |
 | **Nothing installed**    | Just run it. Flux starts an **in-memory MongoDB** (data is lost on restart — perfect for a demo). |
-| **Local mongod**         | `MONGODB_URI=mongodb://127.0.0.1:27017/flux`                       |
-| **MongoDB Atlas (free)** | `MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/flux`     |
+| **Local mongod**         | `MONGODB_URI=mongodb://127.0.0.1:27017/flux`                   |
+| **MongoDB Atlas (free)** | `MONGODB_URI=mongodb+srv://user:pass@cluster.mongodb.net/flux` |
 
 Set `USE_MEMORY_DB=true` to force the in-memory database even when a real one is
 reachable.
 
 > **Demo gotcha:** with the in-memory database, restarting the server wipes it,
-> so a **new API key is minted** and `client/.env.local` is rewritten. Vite bakes
+> so **new API keys are minted** and `client/.env.local` is rewritten. Vite bakes
 > env vars in at startup, so restart `client` (and the agent) after restarting
-> the server, or the dashboard will sit there showing `disconnected` / `401`.
-> Point `MONGODB_URI` at a real MongoDB if you want the key to stay put.
+> the server, or the dashboard will sit there showing `disconnected`. Point
+> `MONGODB_URI` at a real MongoDB if you want the keys to stay put.
 
 ### Collections
 
 **`sites`**
 
-| Field             | Type   | Notes                                    |
-| ----------------- | ------ | ---------------------------------------- |
-| `_id`             | string | Human-friendly id, e.g. `demo-site`      |
-| `name`            | string |                                          |
-| `api_key`         | string | `flux_…`, unique, minted on creation     |
-| `alert_threshold` | number | Requests per alert window                |
-| `phone_number`    | string | E.164, or `null` to skip SMS             |
+| Field             | Type   | Notes                                 |
+| ----------------- | ------ | ------------------------------------- |
+| `_id`             | string | Human-friendly id, e.g. `api.mystore.in` |
+| `name`            | string |                                       |
+| `api_key`         | string | `flux_…`, unique, minted on creation  |
+| `alert_threshold` | number | Requests per alert window             |
+| `phone_number`    | string | E.164, or `null` to skip SMS          |
 
 **`metrics`** — `site_id`, `timestamp` (unix seconds), `request_count`
 
@@ -133,12 +155,17 @@ reachable.
 
 ## API
 
-Every endpoint except site creation needs the site's API key:
+Every endpoint except site creation needs a site's API key:
 
 ```
-Authorization: Bearer flux_45d877cb…
+Authorization: Bearer flux_8121759e…
 ```
-(or `x-api-key: flux_45d877cb…`)
+(or `x-api-key: flux_8121759e…`)
+
+**Writes are scoped, reads are not.** `POST /api/metrics` only accepts data for
+the site the key belongs to, so one site's agent can never forge another's
+numbers. The `GET` endpoints are readable across sites, because the dashboard is
+a single-operator view over everything this server watches.
 
 ### `POST /api/metrics`
 
@@ -146,42 +173,41 @@ Authorization: Bearer flux_45d877cb…
 curl -X POST http://localhost:4000/api/metrics \
   -H "Authorization: Bearer $FLUX_API_KEY" \
   -H "content-type: application/json" \
-  -d '{"site_id":"demo-site","timestamp":1790059570,"request_count":42}'
+  -d '{"site_id":"api.mystore.in","timestamp":1790142772,"request_count":42}'
 ```
 
 `timestamp` is optional (defaults to now) and accepts unix seconds, unix millis
 or an ISO string. Timestamps more than 5 minutes in the future are rejected —
 one bad clock would otherwise stretch every chart's time axis out to meet it.
-The key must belong to `site_id` — otherwise `403`.
 
-### `GET /api/sites/:site_id/metrics?window=15m`
+### `GET /api/sites/:site_id/metrics?window=2m&bucket=4`
 
-Everything the dashboard needs in one poll: the bucketed series, summary stats,
-and recent alerts. `window` accepts `90s`, `15m`, `2h`, `1d` (10s–7d).
+Everything the dashboard needs in one poll. `window` accepts `90s`, `15m`, `2h`,
+`1d` (10s–7d); `bucket` pins the width of a point (omit it and Flux picks a
+width giving ~60 points).
 
 ```json
 {
-  "site": { "id": "demo-site", "name": "Demo Site", "alert_threshold": 120 },
-  "window_seconds": 900,
-  "bucket_seconds": 15,
-  "points": [{ "timestamp": 1790059305, "request_count": 44 }],
-  "stats": { "current": 44, "average": 56, "peak": 210, "total": 1059 },
+  "site": { "id": "api.mystore.in", "name": "api.mystore.in", "alert_threshold": 480 },
+  "window_seconds": 120,
+  "bucket_seconds": 4,
+  "alert_window_seconds": 4,
+  "points": [{ "timestamp": 1790142672, "request_count": 205 }],
+  "stats": { "current": 223, "average": 233, "peak": 251, "total": 6045 },
   "alerts": []
 }
 ```
 
-Buckets are sized to return roughly 60 points however chatty the agents are.
-
 ### Other endpoints
 
-| Endpoint                            | Purpose                                       |
-| ----------------------------------- | --------------------------------------------- |
-| `POST /api/sites`                   | Register a site, returns the API key **once** |
-| `GET /api/sites`                    | List sites (secrets stripped)                 |
-| `GET /api/sites/:id`                | One site's config                             |
-| `PATCH /api/sites/:id`              | Change threshold / phone / name               |
-| `GET /api/sites/:id/alerts?limit=25`| Alert history                                 |
-| `GET /api/health`                   | Site count, Twilio mode, uptime               |
+| Endpoint                             | Purpose                                       |
+| ------------------------------------ | --------------------------------------------- |
+| `POST /api/sites`                    | Register a site, returns the API key **once** |
+| `GET /api/sites`                     | List sites (secrets stripped) — feeds the sidebar |
+| `GET /api/sites/:id`                 | One site's config                             |
+| `PATCH /api/sites/:id`               | Change threshold / phone / name (own key)     |
+| `GET /api/sites/:id/alerts?limit=25` | Alert history                                 |
+| `GET /api/health`                    | Site count, Twilio mode, uptime               |
 
 Registering a site:
 
@@ -209,7 +235,7 @@ const app = express();
 
 app.use(fluxAgent({
   url: 'http://localhost:4000',
-  siteId: 'corner-shop',
+  siteId: 'api.mystore.in',
   apiKey: process.env.FLUX_API_KEY,
   intervalSeconds: 10,
 }));
@@ -235,30 +261,24 @@ flux.stop();        // on shutdown
 
 ### Threshold and phone number
 
-Either edit them in the dashboard's *Alert settings* panel, or:
-
 ```bash
-curl -X PATCH http://localhost:4000/api/sites/demo-site \
+curl -X PATCH http://localhost:4000/api/sites/api.mystore.in \
   -H "Authorization: Bearer $FLUX_API_KEY" \
   -H "content-type: application/json" \
-  -d '{"alert_threshold":300,"phone_number":"+919876543210"}'
+  -d '{"alert_threshold":600,"phone_number":"+919876543210"}'
 ```
 
 Phone numbers must be **E.164** (`+` and country code). A site with no phone
 number still records alerts — the SMS is marked `skipped`.
 
-### How the worker decides
+### Cooldown
 
-Every `ALERT_CRON` tick (default: 30s) it sums each site's `request_count` over
-the trailing `ALERT_WINDOW_SECONDS` (default: 60s) and compares that to
-`alert_threshold`. On a breach it sends the SMS and writes an `alerts` row.
-
-`ALERT_COOLDOWN_SECONDS` (default: 300) caps it at one alert per site per five
+`ALERT_COOLDOWN_SECONDS` (default: 300) caps alerts at one per site per five
 minutes, however long the spike lasts — a sustained breach is one text, not
 forty. Suppressed checks are logged:
 
 ```
-[alerting] demo-site still breaching (237 > 120) but in cooldown for another 290s
+[alerting] api.mystore.in still breaching (2880 > 480) but in cooldown for another 296s
 ```
 
 ### Twilio
@@ -283,24 +303,23 @@ console — verify your own number first.
 
 ## Configuration reference (`server/.env`)
 
-| Variable                 | Default                     | Meaning                                    |
-| ------------------------ | --------------------------- | ------------------------------------------ |
-| `PORT`                   | `4000`                      | API port                                   |
-| `MONGODB_URI`            | `mongodb://127.0.0.1:27017/flux` | Falls back to in-memory if unreachable |
-| `USE_MEMORY_DB`          | `false`                     | Force the in-memory database               |
-| `ALERT_CRON`             | `*/30 * * * * *`            | How often sites are evaluated              |
-| `ALERT_WINDOW_SECONDS`   | `60`                        | Rolling window compared to the threshold   |
-| `ALERT_COOLDOWN_SECONDS` | `300`                       | Minimum gap between alerts for one site    |
-| `TWILIO_*`               | *(empty)*                   | Empty ⇒ dry-run mode                       |
-| `ADMIN_TOKEN`            | *(empty)*                   | Empty ⇒ `POST /api/sites` is open          |
-| `AUTOSEED`               | `true`                      | Create the demo site on an empty database  |
-| `DEMO_PHONE_NUMBER`      | *(empty)*                   | Default number for the seeded site         |
+| Variable                 | Default                          | Meaning                                  |
+| ------------------------ | -------------------------------- | ---------------------------------------- |
+| `PORT`                   | `4000`                           | API port                                 |
+| `MONGODB_URI`            | `mongodb://127.0.0.1:27017/flux` | Falls back to in-memory if unreachable   |
+| `USE_MEMORY_DB`          | `false`                          | Force the in-memory database             |
+| `ALERT_CRON`             | `*/4 * * * * *`                  | How often sites are evaluated            |
+| `ALERT_WINDOW_SECONDS`   | `4`                              | Rolling window compared to the threshold |
+| `ALERT_COOLDOWN_SECONDS` | `300`                            | Minimum gap between alerts for one site  |
+| `TWILIO_*`               | *(empty)*                        | Empty ⇒ dry-run mode                     |
+| `ADMIN_TOKEN`            | *(empty)*                        | Empty ⇒ `POST /api/sites` is open        |
+| `AUTOSEED`               | `true`                           | Create demo sites on an empty database   |
+| `DEMO_PHONE_NUMBER`      | *(empty)*                        | Default number for the seeded sites      |
 
 The dashboard reads `client/.env.local` (written for you by the seed step):
 
 ```env
 VITE_FLUX_API_URL=http://localhost:4000
-VITE_FLUX_SITE_ID=demo-site
 VITE_FLUX_API_KEY=flux_…
 ```
 
@@ -311,12 +330,13 @@ VITE_FLUX_API_KEY=flux_…
 ```bash
 cd server && npm start           # API + alert worker
 cd server && npm run dev         # same, with --watch
-cd server && npm run seed        # (re)seed a site — needs a persistent MongoDB
-cd server && npm run seed -- --id shop --name "Shop" --threshold 200 --phone +919876543210
-cd server && npm run burst       # fire ~2x the threshold
-cd server && npm run burst -- --count 500 --posts 10
+cd server && npm run seed        # (re)seed sites — needs a persistent MongoDB
+cd server && npm run seed -- --threshold 600 --phone +919876543210
+cd server && npm run burst       # trip the threshold on the first site
+cd server && npm run burst -- --site checkout.mystore.in --posts 8
 cd client && npm run dev         # dashboard on :5173
 cd client && npm run build       # production bundle
+cd client && npm run lint        # oxlint
 cd agent  && npm run example     # instrumented example site on :3000
 ```
 
@@ -328,6 +348,6 @@ This is an MVP, deliberately. **In:** one counter metric, per-site API keys,
 threshold alerting with cooldown, SMS, a live dashboard. **Out:** user accounts,
 log tailing, load-balancer integration, multi-metric dashboards, clustering.
 
-The API key is a per-site read/write secret held by both the agent and the
-dashboard — fine for something you self-host on your own machine or a small VPS,
-not a public multi-tenant service.
+The API key is a per-site secret held by both the agent and the dashboard — fine
+for something you self-host on your own machine or a small VPS, not a public
+multi-tenant service.

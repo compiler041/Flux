@@ -17,19 +17,21 @@ import express from 'express';
 import { fluxAgent } from './flux-agent.js';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const demoFile = path.resolve(here, '../server/.demo-site.json');
+const demoFile = path.resolve(here, '../server/.demo-sites.json');
 const demo = fs.existsSync(demoFile)
   ? JSON.parse(fs.readFileSync(demoFile, 'utf8'))
-  : {};
+  : { sites: [] };
 
 const url = process.env.FLUX_URL || demo.url || 'http://localhost:4000';
-const siteId = process.env.FLUX_SITE_ID || demo.site_id;
-const apiKey = process.env.FLUX_API_KEY || demo.api_key;
+const siteId = process.env.FLUX_SITE_ID || demo.sites[0]?.site_id;
+// The key must belong to the site being reported, so look it up by id.
+const apiKey =
+  process.env.FLUX_API_KEY || demo.sites.find((s) => s.site_id === siteId)?.api_key;
 
 if (!siteId || !apiKey) {
   console.error(
-    'No Flux credentials. Start the Flux server once (it seeds a demo site and\n' +
-      'writes server/.demo-site.json), or set FLUX_SITE_ID and FLUX_API_KEY.'
+    'No Flux credentials. Start the Flux server once (it seeds the demo sites\n' +
+      'and writes server/.demo-sites.json), or set FLUX_SITE_ID and FLUX_API_KEY.'
   );
   process.exit(1);
 }

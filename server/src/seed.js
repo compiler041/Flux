@@ -1,8 +1,8 @@
 /**
- * Seed a demo site explicitly.
+ * Seed the demo sites explicitly.
  *
  *   npm run seed
- *   npm run seed -- --id shop --name "Corner Shop" --threshold 200 --phone +919876543210
+ *   npm run seed -- --threshold 600 --phone +919876543210
  *
  * Only useful against a real mongod / Atlas URI: with the in-memory MongoDB
  * fallback the database lives inside the server process, and the server seeds
@@ -12,7 +12,7 @@ import 'dotenv/config';
 
 import { connectDb, disconnectDb } from './db.js';
 import {
-  seedDemoSite,
+  seedDemoSites,
   writeClientEnv,
   writeAgentEnv,
   printSiteBanner,
@@ -25,17 +25,15 @@ function arg(flag, fallback) {
 
 await connectDb();
 
-const site = await seedDemoSite({
-  id: arg('id', 'demo-site'),
-  name: arg('name', 'Demo Site'),
-  threshold: Number(arg('threshold', '120')),
+const sites = await seedDemoSites({
+  threshold: Number(arg('threshold', '480')),
   phone: arg('phone', process.env.DEMO_PHONE_NUMBER || null),
 });
 
-const clientEnv = writeClientEnv(site);
-writeAgentEnv(site);
+const clientEnv = writeClientEnv(sites);
+writeAgentEnv(sites);
 if (clientEnv) console.log(`Wrote ${clientEnv}`);
 
-printSiteBanner(site);
+printSiteBanner(sites);
 
 await disconnectDb();

@@ -3,5 +3,6 @@ dist/
 .env
 .env.local
 .demo-site.json
+.demo-sites.json
 *.log
 .DS_Store
