@@ -1,0 +1,14 @@
+{
+  "name": "flux",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Flux — lightweight self-hosted traffic monitoring and SMS alerting (MERN)",
+  "scripts": {
+    "install:all": "npm install --prefix server && npm install --prefix client && npm install --prefix agent",
+    "dev:server": "npm start --prefix server",
+    "dev:client": "npm run dev --prefix client",
+    "seed": "npm run seed --prefix server",
+    "burst": "npm run burst --prefix server",
+    "example-site": "npm run example --prefix agent"
+  }
+}

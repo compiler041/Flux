@@ -1,0 +1,15 @@
+{
+  "name": "flux-agent",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Tiny drop-in request counter that reports to a Flux server",
+  "main": "flux-agent.js",
+  "exports": "./flux-agent.js",
+  "scripts": {
+    "example": "node example-site.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}

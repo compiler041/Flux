@@ -1,0 +1,25 @@
+{
+  "name": "flux-server",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Flux — ingestion API, MongoDB storage and threshold-alerting worker",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node --watch src/index.js",
+    "seed": "node src/seed.js",
+    "burst": "node src/burst.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.7",
+    "express": "^4.21.2",
+    "mongoose": "^8.9.5",
+    "node-cron": "^3.0.3",
+    "twilio": "^5.4.0"
+  },
+  "optionalDependencies": {
+    "mongodb-memory-server": "^10.1.3"
+  }
+}
