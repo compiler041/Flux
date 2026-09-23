@@ -37,8 +37,12 @@ export async function connectDb() {
   }
 
   memoryServer = await MongoMemoryServer.create();
-  await mongoose.connect(memoryServer.getUri('flux'));
-  console.log('[db] connected to in-memory MongoDB (data is not persisted)');
+  const memoryUri = memoryServer.getUri('flux');
+  await mongoose.connect(memoryUri);
+  console.log('[db] connected to in-memory MongoDB (data is NOT persisted)');
+  // It is a real mongod on a random port, so you can point Compass or mongosh
+  // at it while the server is running — handy for inspecting documents.
+  console.log(`[db] inspect it with: mongosh "${memoryUri}"`);
 }
 
 export async function disconnectDb() {

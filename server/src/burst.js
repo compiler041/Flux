@@ -79,6 +79,6 @@ for (let i = 0; i < posts; i++) {
 }
 
 console.log(
-  '\nDone. The alert worker runs every 30s by default - watch the server log for ' +
-    'the SMS, and the dashboard for the new alert row.'
+  '\nDone. The alert worker re-checks every few seconds - watch the server log ' +
+    'for the SMS, and the dashboard for the new alert row.'
 );
