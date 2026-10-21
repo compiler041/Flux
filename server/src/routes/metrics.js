@@ -33,8 +33,8 @@ function normaliseTimestamp(timestamp) {
  */
 metricsRouter.post('/metrics', requireApiKey, async (req, res, next) => {
   try {
-    const { site_id, timestamp, request_count } = req.body ?? {};
-
+const { site_id, timestamp, request_count } = req.body ?? {};
+let { route = '/' } = req.body ?? {};
     if (!site_id || typeof site_id !== 'string') {
       return res.status(400).json({ error: 'site_id is required' });
     }
