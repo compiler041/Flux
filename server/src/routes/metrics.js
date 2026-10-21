@@ -3,7 +3,7 @@ import { requireApiKey, requireSiteMatch } from '../middleware/auth.js';
 import { Metric } from '../models/Metric.js';
 import { Site } from '../models/Site.js';
 import { Alert } from '../models/Alert.js';
-import { bucketedMetrics } from '../services/metrics.js';
+import { bucketedMetrics, listRoutes } from '../services/metrics.js';
 import { parseWindow, resolveBucket } from '../utils/window.js';
 import { nowSec } from '../db.js';
 
