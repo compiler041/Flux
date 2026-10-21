@@ -1,13 +1,15 @@
-import { Metric } from '../models/Metric.js';
+export async function bucketedMetrics(siteId, sinceTs, bucketSeconds, route) {
+  const match = {
+    site_id: siteId,
+    timestamp: { $gte: sinceTs },
+  };
 
-/**
- * Time series for a site, bucketed into fixed-width buckets so the chart stays
- * readable no matter how chatty the agents are.
- * @returns {Promise<Array<{timestamp:number, request_count:number}>>}
- */
-export async function bucketedMetrics(siteId, sinceTs, bucketSeconds) {
-  const rows = await Metric.aggregate([
-    { $match: { site_id: siteId, timestamp: { $gte: sinceTs } } },
+  if (route !== undefined) {
+    match.route = route;
+  }
+
+  return Metric.aggregate([
+    { $match: match },
     {
       $group: {
         _id: {
@@ -20,16 +22,38 @@ export async function bucketedMetrics(siteId, sinceTs, bucketSeconds) {
       },
     },
     { $sort: { _id: 1 } },
-    { $project: { _id: 0, timestamp: '$_id', request_count: 1 } },
+    {
+      $project: {
+        _id: 0,
+        timestamp: '$_id',
+        request_count: 1,
+      },
+    },
   ]);
-  return rows;
 }
 
-/** Total requests for a site since `sinceTs`. */
-export async function sumSince(siteId, sinceTs) {
-  const [row] = await Metric.aggregate([
-    { $match: { site_id: siteId, timestamp: { $gte: sinceTs } } },
-    { $group: { _id: null, total: { $sum: '$request_count' } } },
+export async function listRoutes(siteId, sinceTs) {
+  return Metric.aggregate([
+    {
+      $match: {
+        site_id: siteId,
+        timestamp: { $gte: sinceTs },
+        route: { $type: 'string' },
+      },
+    },
+    {
+      $group: {
+        _id: '$route',
+        total: { $sum: '$request_count' },
+      },
+    },
+    { $sort: { total: -1, _id: 1 } },
+    {
+      $project: {
+        _id: 0,
+        route: '$_id',
+        total: 1,
+      },
+    },
   ]);
-  return row?.total ?? 0;
 }
