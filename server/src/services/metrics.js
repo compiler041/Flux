@@ -1,3 +1,5 @@
+import { Metric } from '../models/Metric.js';
+
 export async function bucketedMetrics(siteId, sinceTs, bucketSeconds, route) {
   const match = {
     site_id: siteId,
