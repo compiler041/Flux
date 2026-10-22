@@ -65,9 +65,7 @@ Show `agent\example-site.js`, then watch the chart move within ~5 seconds.
 
 ### A4 · Set the alert number
 
-```powershell
-cd "C:\Users\Vaibhav Rathod\Desktop\FLUX"; $KEY = (Select-String -Path "client\.env.local" -Pattern "VITE_FLUX_API_KEY=(.*)").Matches.Groups[1].Value; curl.exe -s -X PATCH http://localhost:4000/api/sites/api.mystore.in -H "Authorization: Bearer $KEY" -H "content-type: application/json" -d '{\"phone_number\":\"+91XXXXXXXXXX\"}'
-```
+'''cd "C:\Users\Vaibhav Rathod\Desktop\FLUX"; $KEY = (Select-String -Path "client\.env.local" -Pattern "VITE_FLUX_API_KEY=(.*)").Matches.Groups[1].Value; curl.exe -s -X PATCH http://localhost:4000/api/sites/api.mystore.in -H "Authorization: Bearer $KEY" -H "content-type: application/json" -d '{\"phone_number\":\"+919812345678\",\"alert_threshold\":480}''''
 
 ### A5 · Trip the threshold
 

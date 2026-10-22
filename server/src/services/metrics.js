@@ -59,3 +59,12 @@ export async function listRoutes(siteId, sinceTs) {
     },
   ]);
 }
+
+/** Total requests for a site since `sinceTs` (all routes). */
+export async function sumSince(siteId, sinceTs) {
+  const [row] = await Metric.aggregate([
+    { $match: { site_id: siteId, timestamp: { $gte: sinceTs } } },
+    { $group: { _id: null, total: { $sum: '$request_count' } } },
+  ]);
+  return row?.total ?? 0;
+}

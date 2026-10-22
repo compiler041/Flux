@@ -1,0 +1,24 @@
+services:
+  flux-server:
+    build: ./server
+    restart: unless-stopped
+    env_file: ./server/.env      # MONGODB_URI=mongodb://flux-mongo:27017/flux, AUTOSEED=false, ADMIN_TOKEN=..., TWILIO_*
+    depends_on: [flux-mongo]
+    networks: [default, shared]
+  flux-client:
+    build:
+      context: ./client
+      args:
+        VITE_FLUX_API_URL: https://flux.secondbrain.sbs
+        VITE_FLUX_API_KEY: ${FLUX_DASH_KEY}
+    restart: unless-stopped
+    networks: [shared]
+  flux-mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes: [fluxdata:/data/db]
+volumes:
+  fluxdata:
+networks:
+  shared:
+    external: true
