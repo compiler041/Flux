@@ -34,7 +34,7 @@ export const BUCKET_SECONDS = 4;
  * @returns the site documents.
  */
 export async function seedDemoSites({
-  threshold = 480,
+  threshold = Number(process.env.DEFAULT_ALERT_THRESHOLD) || 1,
   phone = null,
   backfillMinutes = 15,
 } = {}) {

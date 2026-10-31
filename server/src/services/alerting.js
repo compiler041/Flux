@@ -3,6 +3,7 @@ import { Site } from '../models/Site.js';
 import { Alert } from '../models/Alert.js';
 import { sumSince } from './metrics.js';
 import { sendSms } from './notifier.js';
+import { sendEmail } from './emailNotifier.js';
 import { nowSec } from '../db.js';
 
 /**
@@ -32,6 +33,11 @@ export async function evaluateSite(site, { windowSeconds, cooldownSeconds }) {
     `${windowSeconds}s (threshold ${site.alert_threshold}).`;
 
   const sms_status = await sendSms(site.phone_number, message);
+  const email_status = await sendEmail(
+    process.env.ALERT_EMAIL_TO,
+    `[Flux] Request threshold exceeded: ${site.name}`,
+    message
+  );
 
   const alert = await Alert.create({
     site_id: site._id,
@@ -40,9 +46,12 @@ export async function evaluateSite(site, { windowSeconds, cooldownSeconds }) {
     threshold: site.alert_threshold,
     message,
     sms_status,
+    email_status,
   });
 
-  console.log(`[alerting] ALERT ${site._id} — ${message} (sms: ${sms_status})`);
+  console.log(
+    `[alerting] ALERT ${site._id} — ${message} (sms: ${sms_status}, email: ${email_status})`
+  );
   return alert;
 }
 

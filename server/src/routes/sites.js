@@ -40,7 +40,8 @@ sitesRouter.post('/sites', async (req, res, next) => {
       _id: id,
       name,
       api_key,
-      alert_threshold: Number(alert_threshold) || 100,
+      alert_threshold:
+        Number(alert_threshold) || Number(process.env.DEFAULT_ALERT_THRESHOLD) || 1,
       phone_number: phone_number ?? null,
     });
 

@@ -26,7 +26,7 @@ function arg(flag, fallback) {
 await connectDb();
 
 const sites = await seedDemoSites({
-  threshold: Number(arg('threshold', '480')),
+  threshold: Number(arg('threshold', process.env.DEFAULT_ALERT_THRESHOLD || '1')),
   phone: arg('phone', process.env.DEMO_PHONE_NUMBER || null),
 });
 

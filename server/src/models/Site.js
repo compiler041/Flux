@@ -7,7 +7,12 @@ const siteSchema = new mongoose.Schema(
     _id: { type: String, required: true },
     name: { type: String, required: true },
     api_key: { type: String, required: true, unique: true, index: true },
-    alert_threshold: { type: Number, required: true, default: 100, min: 1 },
+    alert_threshold: {
+      type: Number,
+      required: true,
+      default: Number(process.env.DEFAULT_ALERT_THRESHOLD) || 1,
+      min: 1,
+    },
     phone_number: { type: String, default: null },
   },
   { timestamps: { createdAt: 'created_at', updatedAt: 'updated_at' } }

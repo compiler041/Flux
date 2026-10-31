@@ -4,8 +4,8 @@
 
 Grafana + Prometheus is a superb stack — and an unreasonable one if you run two
 websites and a shop. Flux does the one thing a small operator actually needs:
-watch how much traffic a site is getting, and **send an SMS when it spikes past
-a threshold you set**.
+watch how much traffic a site is getting, and **send SMS and Gmail alerts when
+it spikes past a threshold you set**.
 
 Built as an SDG-9 (Industry, Innovation and Infrastructure) mini project on the
 MERN stack — MongoDB, Express, React, Node.
@@ -90,10 +90,10 @@ Open <http://localhost:5173>.
    ```bash
    cd server && npm run burst
    ```
-5. **Watch it fire.** Within four seconds the worker logs the breach, the SMS
-   goes out, the line punches through the threshold, `Current` turns red, and a
-   row appears under *Recent alerts*.
-6. **Run `npm run burst` again** — traffic keeps climbing but no second SMS
+5. **Watch it fire.** Within four seconds the worker logs the breach, configured
+   SMS and email alerts are sent, the line punches through the threshold,
+   `Current` turns red, and a row appears under *Recent alerts*.
+6. **Run `npm run burst` again** — traffic keeps climbing but no second alert
    arrives. That's the 5-minute cooldown doing its job.
 
 ---
@@ -149,7 +149,7 @@ reachable.
 **`metrics`** — `site_id`, `timestamp` (unix seconds), `request_count`
 
 **`alerts`** — `site_id`, `fired_at`, `request_count`, `threshold`, `message`,
-`sms_status` (`sent` / `failed` / `skipped`)
+`sms_status` and `email_status` (`sent` / `failed` / `skipped`)
 
 ---
 
@@ -299,6 +299,23 @@ TWILIO_FROM_NUMBER=+15005550006
 On a Twilio **trial account** you can only text numbers you've verified in the
 console — verify your own number first.
 
+### Gmail email alerts
+
+When a site's rolling request count exceeds its threshold, Flux also emails
+`compilelater@gmail.com` from `compilelater@gmail.com`. Gmail sending is
+optional; without credentials, the alert is still recorded and email is marked
+`skipped`. Set a Google App Password in `server/.env` (with 2-Step Verification
+enabled on the Gmail account):
+
+```env
+GMAIL_USER=compilelater@gmail.com
+GMAIL_APP_PASSWORD=your_16_character_app_password
+ALERT_EMAIL_TO=compilelater@gmail.com
+```
+
+Email alerts follow the same per-site cooldown as SMS. Never commit the App
+Password to source control.
+
 ---
 
 ## Configuration reference (`server/.env`)
@@ -308,10 +325,14 @@ console — verify your own number first.
 | `PORT`                   | `4000`                           | API port                                 |
 | `MONGODB_URI`            | `mongodb://127.0.0.1:27017/flux` | Falls back to in-memory if unreachable   |
 | `USE_MEMORY_DB`          | `false`                          | Force the in-memory database             |
+| `DEFAULT_ALERT_THRESHOLD` | `1`                              | Request limit for newly created or seeded sites |
 | `ALERT_CRON`             | `*/4 * * * * *`                  | How often sites are evaluated            |
 | `ALERT_WINDOW_SECONDS`   | `4`                              | Rolling window compared to the threshold |
 | `ALERT_COOLDOWN_SECONDS` | `300`                            | Minimum gap between alerts for one site  |
 | `TWILIO_*`               | *(empty)*                        | Empty ⇒ dry-run mode                     |
+| `GMAIL_USER`              | `compilelater@gmail.com`         | Gmail sender address                     |
+| `GMAIL_APP_PASSWORD`      | *(empty)*                        | Gmail App Password; empty ⇒ email skipped |
+| `ALERT_EMAIL_TO`          | `compilelater@gmail.com`         | Threshold alert recipient                |
 | `ADMIN_TOKEN`            | *(empty)*                        | Empty ⇒ `POST /api/sites` is open        |
 | `AUTOSEED`               | `true`                           | Create demo sites on an empty database   |
 | `DEMO_PHONE_NUMBER`      | *(empty)*                        | Default number for the seeded sites      |
@@ -345,8 +366,9 @@ cd agent  && npm run example     # instrumented example site on :3000
 ## Scope
 
 This is an MVP, deliberately. **In:** one counter metric, per-site API keys,
-threshold alerting with cooldown, SMS, a live dashboard. **Out:** user accounts,
-log tailing, load-balancer integration, multi-metric dashboards, clustering.
+threshold alerting with cooldown, SMS and Gmail notifications, a live dashboard.
+**Out:** user accounts, log tailing, load-balancer integration, multi-metric
+dashboards, clustering.
 
 The API key is a per-site secret held by both the agent and the dashboard — fine
 for something you self-host on your own machine or a small VPS, not a public

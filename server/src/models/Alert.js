@@ -11,6 +11,12 @@ const alertSchema = new mongoose.Schema({
     enum: ['sent', 'failed', 'skipped'],
     required: true,
   },
+  email_status: {
+    type: String,
+    enum: ['sent', 'failed', 'skipped'],
+    required: true,
+    default: 'skipped',
+  },
 });
 
 alertSchema.index({ site_id: 1, fired_at: -1 });

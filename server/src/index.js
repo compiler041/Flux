@@ -8,6 +8,7 @@ import { sitesRouter } from './routes/sites.js';
 import { metricsRouter } from './routes/metrics.js';
 import { startAlertWorker } from './services/alerting.js';
 import { initNotifier, notifierReady } from './services/notifier.js';
+import { emailNotifierReady, initEmailNotifier } from './services/emailNotifier.js';
 import {
   seedDemoSites,
   writeClientEnv,
@@ -25,6 +26,7 @@ app.get('/api/health', async (_req, res, next) => {
       ok: true,
       sites: await Site.countDocuments(),
       twilio: notifierReady() ? 'configured' : 'dry-run',
+      email: emailNotifierReady() ? 'configured' : 'dry-run',
       uptime_seconds: Math.round(process.uptime()),
     });
   } catch (err) {
@@ -47,6 +49,7 @@ const port = Number(process.env.PORT) || 4000;
 
 await connectDb();
 await initNotifier();
+await initEmailNotifier();
 startAlertWorker();
 
 // First run (or in-memory database): create the demo site so there is always
